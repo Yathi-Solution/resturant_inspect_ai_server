@@ -46,14 +46,14 @@ git push hf hf-temp:main --force
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "HF Spaces push failed!" -ForegroundColor Red
-    git checkout main | Out-Null
-    git branch -D hf-temp | Out-Null
+    git checkout main -f | Out-Null
+    git branch -D hf-temp 2>$null
     exit 1
 }
 
 # Cleanup
-git checkout main | Out-Null
-git branch -D hf-temp | Out-Null
+git checkout main -f | Out-Null
+git branch -D hf-temp 2>$null
 
 Write-Host "HF Spaces push successful!" -ForegroundColor Green
 Write-Host "`nDeployment complete!" -ForegroundColor Green

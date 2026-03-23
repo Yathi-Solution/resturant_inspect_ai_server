@@ -1,3 +1,12 @@
+---
+title: Restaurant Inspector API
+emoji: 🍽️
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # 🍽️ Restaurant Inspector
 
 AI-powered restaurant review analyzer that scores reviews across 5 key aspects: Food, Service, Hygiene, Parking, and Cleanliness.

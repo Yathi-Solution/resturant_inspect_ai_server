@@ -48,14 +48,14 @@ git push hf hf-temp:main --force
 
 if [ $? -ne 0 ]; then
     echo "❌ HF Spaces push failed!"
-    git checkout main > /dev/null 2>&1
-    git branch -D hf-temp > /dev/null 2>&1
+    git checkout main -f > /dev/null 2>&1
+    git branch -D hf-temp 2>/dev/null
     exit 1
 fi
 
 # Cleanup
-git checkout main > /dev/null 2>&1
-git branch -D hf-temp > /dev/null 2>&1
+git checkout main -f > /dev/null 2>&1
+git branch -D hf-temp 2>/dev/null
 
 echo "✅ HF Spaces push successful!"
 echo ""
