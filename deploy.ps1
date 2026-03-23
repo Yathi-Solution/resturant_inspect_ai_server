@@ -31,13 +31,15 @@ Write-Host "`nPushing to HF Spaces..." -ForegroundColor Yellow
 
 # Create clean branch
 git checkout --orphan hf-temp | Out-Null
-git reset | Out-Null
+
+# Remove ALL files from staging
+git rm -rf . --quiet
 
 # Add only deployment files (no docs/)
-git add .gitignore Dockerfile main.py pyproject.toml README.md train.py upload_model.py .env.example | Out-Null
+git add .gitignore Dockerfile main.py pyproject.toml README.md train.py upload_model.py .env.example
 
 # Commit
-git commit -m $message | Out-Null
+git commit -m $message
 
 # Push to HF
 git push hf hf-temp:main --force

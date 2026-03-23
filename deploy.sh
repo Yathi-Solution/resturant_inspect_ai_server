@@ -33,10 +33,12 @@ echo "🤗 Pushing to HF Spaces..."
 
 # Create clean branch
 git checkout --orphan hf-temp > /dev/null 2>&1
-git reset > /dev/null 2>&1
+
+# Remove ALL files from staging
+git rm -rf . --quiet
 
 # Add only deployment files (no docs/)
-git add .gitignore Dockerfile main.py pyproject.toml README.md train.py upload_model.py .env.example > /dev/null 2>&1
+git add .gitignore Dockerfile main.py pyproject.toml README.md train.py upload_model.py .env.example
 
 # Commit
 git commit -m "$MESSAGE" > /dev/null 2>&1
