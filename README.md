@@ -9,7 +9,7 @@ AI-powered restaurant review analyzer that scores reviews across 5 key aspects: 
 - **Production-Ready**: FastAPI with proper validation and error handling
 - **Easy Deployment**: One-click deploy to Render
 
-## 🧠 Technology Stack
+## 🧠 Technology Stack:
 
 - **Model**: DistilBERT (fine-tuned on Yelp reviews)
 - **Framework**: FastAPI + Uvicorn
