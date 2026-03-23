@@ -6,7 +6,7 @@ The Restaurant Inspector API follows a **serverless microservices architecture**
 
 ## Architecture Diagram
 
-![Architecture Diagram](architecture-diagram.png)
+![Architecture Diagram](https://raw.githubusercontent.com/Yathi-Solution/resturant_inspect_ai_server/main/docs/architecture-diagram.png)
 
 ```mermaid
 graph TB

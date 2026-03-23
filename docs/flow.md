@@ -6,7 +6,7 @@ This document describes the complete lifecycle of a restaurant review analysis r
 
 ## Flow Diagram
 
-![Flow Diagram](flow-diagram.png)
+![Flow Diagram](https://raw.githubusercontent.com/Yathi-Solution/resturant_inspect_ai_server/main/docs/flow-diagram.png)
 
 ```mermaid
 sequenceDiagram

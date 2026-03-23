@@ -6,7 +6,7 @@ The Restaurant Inspector system consists of two primary pipelines: the **Trainin
 
 ## Components Diagram
 
-![System Components](system-components-diagram.png)
+![System Components](https://raw.githubusercontent.com/Yathi-Solution/resturant_inspect_ai_server/main/docs/system-components-diagram.png)
 
 ```mermaid
 graph LR
