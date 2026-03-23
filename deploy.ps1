@@ -32,8 +32,8 @@ Write-Host "`nPushing to HF Spaces..." -ForegroundColor Yellow
 # Create clean branch
 git checkout --orphan hf-temp | Out-Null
 
-# Remove ALL files from staging
-git rm -rf . --quiet
+# Remove ALL files from index (keep working tree)
+git rm -rf . --cached --quiet
 
 # Add only deployment files (no docs/)
 git add .gitignore Dockerfile main.py pyproject.toml README.md train.py upload_model.py .env.example
