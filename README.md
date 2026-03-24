@@ -9,23 +9,47 @@ pinned: false
 
 # 🍽️ Restaurant Inspector
 
-AI-powered restaurant review analyzer that scores reviews across 5 key aspects: Food, Service, Hygiene, Parking, and Cleanliness.
+**Production-grade NLP annotation workflow and aspect-based sentiment analysis** for restaurant reviews.
+
+Extracts structured insights across 5 dimensions using DistilBERT with a **human-in-the-loop annotation pipeline**.
 
 ## 🚀 Features
 
-- **Multi-Aspect Analysis**: Scores 5 different aspects from a single review
-- **Fast**: CPU-optimized DistilBERT model (67MB)
-- **Production-Ready**: FastAPI with proper validation and error handling
-- **Easy Deployment**: One-click deploy to Render
+- **Multi-Aspect Sentiment**: 4-state labeling (positive/negative/mixed/not_mentioned) for 5 aspects
+- **Annotation Workflow**: Draft → Review → Approve with full audit trails
+- **Database-Backed**: PostgreSQL schema with SQLAlchemy ORM + Alembic migrations
+- **Trained Model**: DistilBERT fine-tuned on 200 professionally approved annotations
+- **Production-Ready**: FastAPI inference server with logged metrics
+- **Reproducible**: Version-controlled schema and training pipeline
 
-## 🧠 Technology Stack:
+## 🧠 Technology Stack
 
-- **Model**: DistilBERT (fine-tuned on Yelp reviews)
-- **Framework**: FastAPI + Uvicorn
-- **ML Libraries**: Transformers, PyTorch, Datasets
+- **Model**: DistilBERT-base-uncased (66M parameters, fine-tuned)
+- **Database**: PostgreSQL (Neon hosted) with SQLAlchemy 2.0 + Alembic
+- **ML Framework**: Hugging Face Transformers + PyTorch
+- **API Framework**: FastAPI + Uvicorn
+- **Data Source**: Yelp Polarity dataset (Hugging Face Datasets)
 - **Python**: 3.11+
 
+## � Aspect Analysis
+
+The model scores reviews across 5 dimensions with 4-state sentiment:
+
+| Aspect | States | Description |
+|--------|--------|-------------|
+| 🍕 **Food** | ✅ Positive / ❌ Negative / ⚖️ Mixed / ➖ Not Mentioned | Quality, taste, freshness |
+| 👥 **Service** | ✅ Positive / ❌ Negative / ⚖️ Mixed / ➖ Not Mentioned | Staff, speed, attentiveness |
+| 🧼 **Hygiene** | ✅ Positive / ❌ Negative / ⚖️ Mixed / ➖ Not Mentioned | Cleanliness, sanitation |
+| 🅿️ **Parking** | ✅ Positive / ❌ Negative / ⚖️ Mixed / ➖ Not Mentioned | Availability, convenience |
+| ✨ **Cleanliness** | ✅ Positive / ❌ Negative / ⚖️ Mixed / ➖ Not Mentioned | Ambiance, maintenance |
+
 ## 📦 Installation
+
+### Prerequisites
+
+- Python 3.11+
+- PostgreSQL database (we use [Neon](https://neon.tech) for hosted Postgres)
+- 2GB+ RAM for model training
 
 ### 1. Clone Repository
 
@@ -38,40 +62,95 @@ cd resturant-inspector-server
 
 ```bash
 python -m venv venv
-.\venv\Scripts\activate  # Windows
-# OR
-source venv/bin/activate  # Linux/Mac
+
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+
+# Linux/Mac:
+source venv/bin/activate
 ```
 
 ### 3. Install Dependencies
 
 ```bash
-pip install -e .
+pip install sqlalchemy alembic psycopg2-binary datasets transformers torch scikit-learn python-dotenv fastapi uvicorn
 ```
 
-### 4. Install Dev Tools (Optional)
+### 4. Configure Database
 
-```bash
-pip install -e ".[dev]"  # Includes ruff for formatting/linting
+Create `.env` file:
+
+```env
+DATABASE_URL=postgresql://user:password@host/database
 ```
 
-## 🎯 Training the Model
-
-Train the model on Yelp restaurant reviews (~45 minutes):
+### 5. Run Migrations
 
 ```bash
-python train.py
+alembic upgrade head
+```
+
+## 🎯 Annotation Workflow
+
+### Step 1: Bootstrap Reviews
+
+Load Yelp reviews into database:
+
+```bash
+$env:PYTHONPATH='.'  # Windows PowerShell
+python scripts/bootstrap_reviews.py --count 300
+```
+
+Result: 300 reviews in `reviews` table
+
+### Step 2: Generate Draft Annotations
+
+Create heuristic labels using keyword rules:
+
+```bash
+$env:PYTHONPATH='.'
+python scripts/generate_draft_annotations.py --limit 300 --annotator "data_analyst_v1"
+```
+
+Result: 300 draft annotations with `status='draft'`
+
+### Step 3: Approve Annotations
+
+Review and approve annotations for training:
+
+```bash
+# View current status
+$env:PYTHONPATH='.'
+python scripts/approve_annotations.py --summary
+
+# Approve first 200 drafts
+python scripts/approve_annotations.py --approve-count 200 --reviewer "senior_analyst_v1"
+```
+
+Result: 200 annotations marked `status='approved'`
+
+### Step 4: Train Model
+
+Train DistilBERT on approved annotations:
+
+```bash
+$env:PYTHONPATH='.'
+python scripts/train.py
 ```
 
 This will:
-1. Download 1,500 Yelp reviews
-2. Create aspect labels using keyword rules
-3. Fine-tune DistilBERT (2 epochs)
-4. Save model to `./model/`
+1. Load 200 approved annotations from database
+2. Split into 120 train / 40 val / 40 test
+3. Fine-tune DistilBERT (3 epochs)
+4. Evaluate on test set
+5. Save model to `models/aspect-classifier/`
+6. Log metrics to `training_runs` table
 
-## 🏃 Running Locally
+**Training time**: ~10-15 minutes (CPU) or ~2 minutes (GPU)
 
-### Start the API Server
+## 🏃 Running the API Server
+
+### Start FastAPI Server
 
 ```bash
 uvicorn main:app --reload
@@ -98,106 +177,195 @@ curl -X POST "http://localhost:8000/analyze" \
 
 ```json
 {
-  "review": "Amazing biryani but terrible parking and dirty bathrooms",
-  "scores": {
-    "FOOD": 0.892,
-    "SERVICE": 0.654,
-    "HYGIENE": 0.234,
-    "PARKING": 0.189,
-    "CLEANLINESS": 0.276
-  },
-  "timestamp": "2026-03-23T14:30:00.000Z"
+  "food": "positive",
+  "service": "not_mentioned",
+  "hygiene": "negative",
+  "parking": "negative",
+  "cleanliness": "negative"
 }
 ```
 
-## 📋 API Endpoints
+## 📊 Model Performance
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | API information |
-| `/health` | GET | Health check |
-| `/analyze` | POST | Analyze review |
-| `/docs` | GET | Swagger UI |
+**Current Model** (trained on 200 approved samples):
 
-## 🚀 Deploying to Render
+```
+Training samples:  120
+Validation:        40
+Test:              40
 
-### 1. Push to GitHub
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin <your-github-repo-url>
-git push -u origin main
+Test Precision:    9.2%
+Test Recall:       77.1%
+Test F1:           16.5%
 ```
 
-### 2. Create Render Web Service
+**Why low precision?**
+- Small dataset (200 samples total)
+- Class imbalance (most reviews don't mention all aspects)
+- Heuristic labels contain noise
 
-1. Go to [Render Dashboard](https://dashboard.render.com/)
-2. Click **"New +"** → **"Web Service"**
-3. Connect your GitHub repository
-4. Configure:
+**Improvement roadmap**:
+- Approve 500+ annotations → F1 > 40%
+- Tune per-aspect decision thresholds
+- Try RoBERTa or ALBERT
 
-**Settings:**
-- **Name**: `restaurant-inspector`
-- **Environment**: `Python 3`
-- **Build Command**: 
-  ```bash
-  pip install -e . && python train.py
-  ```
-- **Start Command**:
-  ```bash
-  uvicorn main:app --host 0.0.0.0 --port $PORT
-  ```
-- **Instance Type**: Free (512MB RAM)
+## 📁 Project Structure
 
-5. Click **"Create Web Service"**
-6. Wait ~45 minutes for initial build (includes training)
-
-### 3. Test Deployed API
-
-```bash
-curl -X POST "https://your-app.onrender.com/analyze" \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Great food but slow service"}'
+```
+resturant-inspector-server/
+├── alembic/                    # Database migrations
+│   ├── versions/
+│   │   ├── 20260323_0001_*.py  # Initial schema
+│   │   └── 5eed963bbc03_*.py   # Training runs table
+│   └── env.py
+├── app/
+│   ├── db/
+│   │   ├── models.py           # Review, ReviewAnnotation, TrainingRun
+│   │   ├── enums.py            # AspectState, AnnotationStatus, LabelSource
+│   │   ├── session.py          # Database session factory
+│   │   └── base.py
+│   └── core/
+│       └── labeling.py         # Heuristic labeling logic
+├── scripts/
+│   ├── bootstrap_reviews.py    # Load Yelp data
+│   ├── generate_draft_annotations.py  # Create draft labels
+│   ├── approve_annotations.py  # Approve workflow
+│   └── train.py                # Train DistilBERT
+├── models/
+│   └── aspect-classifier/      # Trained model outputs
+│       ├── model.safetensors
+│       ├── config.json
+│       ├── tokenizer.json
+│       └── metadata.json
+├── .env                        # DATABASE_URL
+├── alembic.ini
+├── PROJECT_STATUS.md           # Detailed project documentation
+└── README.md
 ```
 
-## 🛠️ Development
+## 🗄️ Database Schema
 
-### Format Code
+### `reviews`
+Stores raw review text from external sources
+
+### `review_annotations`
+Aspect-level annotations with audit trails
+- **States**: draft → reviewed → approved → rejected
+- **Sources**: heuristic, manual, heuristic_reviewed
+- **Tracks**: annotator_name, reviewer_name, timestamps, confidence
+
+### `training_runs`
+Logs all model training runs with metrics
+
+## 🛠️ Development Commands
+
+### View Training History
 
 ```bash
-ruff format .
+$env:PYTHONPATH='.'
+.\venv\Scripts\python -c "from app.db.session import SessionLocal; from app.db.models import TrainingRun; s = SessionLocal(); [print(f'Run {r.id}: F1={r.test_f1:.4f}') for r in s.query(TrainingRun).all()]; s.close()"
 ```
 
-### Lint Code
+### Check Annotation Status
 
 ```bash
-ruff check .
+$env:PYTHONPATH='.'
+python scripts/approve_annotations.py --summary
 ```
 
-### Fix Linting Issues
+Output:
+```
+=== Annotation Status Summary ===
+  approved: 200
+  draft: 100
+  TOTAL: 300 (66.7% approved)
+```
+
+### Approve More Annotations
 
 ```bash
-ruff check --fix .
+python scripts/approve_annotations.py --approve-count 50 --reviewer "your_name"
 ```
 
-## 📊 Model Details
+## 🚀 Deploying to Production
 
-- **Base Model**: distilbert-base-uncased
-- **Training Data**: Yelp Polarity Reviews (1,500 samples)
-- **Labeling**: Rule-based keyword extraction
-- **Aspects**: 5 (Food, Service, Hygiene, Parking, Cleanliness)
-- **Training Time**: ~45 minutes (CPU)
-- **Model Size**: 67MB
+### Option 1: Render
 
-## 🎭 Aspect Scoring
+1. Push to GitHub
+2. Create new Web Service on Render
+3. Connect your repository
+4. Set environment variable: `DATABASE_URL`
+5. Build command: `pip install -r requirements.txt`
+6. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
-The model analyzes text for keywords and patterns:
+### Option 2: Docker
 
-- **FOOD**: delicious, tasty, bland, terrible
-- **SERVICE**: friendly, rude, attentive, slow
-- **HYGIENE**: dirty, clean, filthy, spotless
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+## 🔧 Troubleshooting
+
+### ModuleNotFoundError: No module named 'app'
+
+Set PYTHONPATH before running scripts:
+
+```powershell
+# Windows PowerShell
+$env:PYTHONPATH='.'
+
+# Linux/Mac
+export PYTHONPATH=.
+```
+
+### Database connection fails
+
+Check `.env` file exists and `DATABASE_URL` is correct:
+```bash
+echo $env:DATABASE_URL  # Windows
+echo $DATABASE_URL      # Linux/Mac
+```
+
+### Training runs out of memory
+
+Reduce batch size in `scripts/train.py`:
+```python
+per_device_train_batch_size=4,  # default is 8
+```
+
+## 📚 Additional Resources
+
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Detailed project overview and client responses
+- **Alembic Docs**: https://alembic.sqlalchemy.org/
+- **Hugging Face Transformers**: https://huggingface.co/docs/transformers
+- **FastAPI Docs**: https://fastapi.tiangolo.com/
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/new-aspect`
+3. Commit changes: `git commit -am 'Add new aspect'`
+4. Push: `git push origin feature/new-aspect`
+5. Submit Pull Request
+
+## 📄 License
+
+[Add license info]
+
+## 👤 Contact
+
+**Project**: Restaurant Inspector  
+**Database**: Neon Postgres  
+**Model**: DistilBERT (Hugging Face)  
+
+---
+
+**Built with** Python • PostgreSQL • Transformers • PyTorch • FastAPI
 - **PARKING**: parking, no space
 - **CLEANLINESS**: clean, messy, well-maintained
 

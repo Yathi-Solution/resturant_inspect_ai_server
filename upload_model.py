@@ -1,8 +1,9 @@
 """Upload trained model to Hugging Face Hub."""
 
 import os
-from huggingface_hub import HfApi, login
+
 from dotenv import load_dotenv
+from huggingface_hub import HfApi, login
 
 # Load environment variables
 load_dotenv()

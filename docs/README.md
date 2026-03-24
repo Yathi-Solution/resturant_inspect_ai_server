@@ -1,85 +1,108 @@
 # Documentation
 
-This folder contains comprehensive documentation for the Restaurant Inspector API system.
+This folder contains comprehensive documentation for the Restaurant Inspector annotation workflow and training system.
 
 ## Documents
 
 ### 1. [Architecture](architecture.md)
-**High-level system architecture** showing the complete infrastructure, components, and their relationships.
+**Database-backed annotation workflow architecture** showing the complete infrastructure for aspect-based sentiment analysis.
 
 Topics covered:
-- Client layer and API endpoints
-- HF Spaces infrastructure
-- FastAPI server components
-- Model pipeline and AI processing
-- Hugging Face Hub integration
-- Data flow and design decisions
-- Scalability and monitoring
+- PostgreSQL database schema (Neon hosted)
+- SQLAlchemy ORM + Alembic migrations
+- Annotation workflow (draft → review → approve)
+- Training pipeline with DistilBERT
+- Model evaluation and metrics logging
+- Audit trails and version control
 
 **Diagram**: `architecture-diagram.png`
 
 ---
 
-### 2. [Request Flow](flow.md)
-**Detailed sequence diagram** showing the complete lifecycle of a review analysis request.
+### 2. [Annotation Workflow](flow.md)
+**Detailed workflow diagram** showing the complete annotation lifecycle from data ingestion to model training.
 
 Topics covered:
-- Startup phase (model download and loading)
-- Request processing (per review)
-- Tokenization process
-- Model inference steps
-- Response generation
-- Performance metrics and latency breakdown
-- Error handling
-- Optimization opportunities
+- Data ingestion from Yelp dataset
+- Heuristic draft annotation generation
+- Human review and approval process
+- Train/validation/test splits
+- Model training on approved annotations
+- Metrics logging to database
+- Reproducible training pipeline
 
-**Diagram**: `flow-diagram.png`
+**Diagrams**: 
+- `annotation-workflow.png` - Complete lifecycle flowchart
+- `sequence-diagram.png` - Detailed interaction sequence
 
 ---
 
 ### 3. [System Components](system-components.md)
-**Component-level breakdown** of both training pipeline (offline) and production API (live).
+**Component-level breakdown** of the database schema, scripts, and training infrastructure.
 
 Topics covered:
-- Training Pipeline:
-  - Yelp dataset
-  - training script (train.py)
-  - Rule-based labeling
-  - DistilBERT fine-tuning
-  - Model artifacts
-  - HF Hub upload
-  
-- Production API:
-  - main.py structure
-  - Model download mechanism
-  - FastAPI endpoints
-  - Transformers pipeline
-  - JSON response formatting
-  
-- Technology stack and file structure
+- Database Schema:
+  - `reviews` table - raw review storage
+  - `review_annotations` table - aspect labels with audit trails
+  - `training_runs` table - metrics and model versioning
+- Scripts:
+  - `bootstrap_reviews.py` - data ingestion
+  - `generate_draft_annotations.py` - heuristic labeling
+  - `approve_annotations.py` - approval workflow
+  - `train.py` - DistilBERT fine-tuning
+- ORM Models and Enums
+- Migration system with Alembic
 
-**Diagram**: `system-components-diagram.png`
+**Diagram**: `system-components.png`
+
+---
+
+## Quick Reference
+
+### Current System Status (March 2026)
+
+**Database**: Neon Postgres
+- 300 reviews ingested
+- 200 approved annotations ready for training
+- 3 training runs logged
+
+**Model**: DistilBERT-base-uncased
+- Trained on 120 samples (60% split)
+- Test F1: 0.1646 (16.5%)
+- Multi-label classification: 10 binary labels
+
+**Schema Version**: 
+- Migration 1: `20260323_0001` (reviews + review_annotations)
+- Migration 2: `5eed963bbc03` (training_runs + reviewer_name)
+
+---
+
+## Documentation Standards
+
+All diagrams are provided as **PNG images** for fast viewing. Raw Mermaid syntax is available in [mermaid-syntax.md](mermaid-syntax.md) for editing and regeneration.
 
 ---
 
 ### 4. [Mermaid Syntax](mermaid-syntax.md)
-Raw Mermaid diagram code for all three architecture diagrams. Use this to:
-- Regenerate diagrams
+Raw Mermaid diagram code for all architecture diagrams. Use this to:
+- Regenerate PNG diagrams
 - Customize visualizations
 - Create variations
-- Render in Markdown viewers
+- Edit diagram structure
 
 ---
 
-## Diagrams
+## Diagram Files
 
-Place the architecture diagram images in this folder:
+All diagram PNG files in this folder:
 
-- `architecture-diagram.png` - High-level system architecture
-- `flow-diagram.png` - Request flow sequence
-- `system-components-diagram.png` - Training & production components
+- `architecture-diagram.png` - High-level system architecture (horizontal layout)
+- `annotation-workflow.png` - Complete annotation lifecycle (5 phases)
+- `sequence-diagram.png` - Detailed interaction flow with database
+- `system-components.png` - Component-level view (horizontal layout)
+- `database-schema.png` - ER diagram with table relationships
 
-These images complement the Mermaid code blocks in each document.
+To regenerate diagrams: Copy Mermaid code from [mermaid-syntax.md](mermaid-syntax.md) to [mermaid.live](https://mermaid.live/) and export as PNG.
 
 ---
 

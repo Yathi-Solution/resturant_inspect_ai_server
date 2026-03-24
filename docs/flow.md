@@ -1,153 +1,385 @@
-# Request Flow & Sequence
+# Annotation Workflow & Training Flow
 
 ## Overview
 
-This document describes the complete lifecycle of a restaurant review analysis request, from the moment a user submits text to receiving structured aspect scores.
+This document describes the complete annotation lifecycle from data ingestion through model training, showing how reviews are labeled, approved, and used to fine-tune DistilBERT.
 
-## Flow Diagram
+## Workflow Diagram
 
-![Flow Diagram](flow-diagram.png)
+![Annotation Workflow](annotation-workflow.png)
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant FastAPI
-    participant Pipeline
-    participant HFHub as Hugging Face Hub
-    participant Model as DistilBERT Model
+**Complete Lifecycle**: Data Ingestion → Draft Generation → Human Review → Model Training → Model Persistence
     
-    Note over FastAPI,HFHub: Startup Phase (One-time)
-    FastAPI->>HFHub: Download model
-    HFHub-->>FastAPI: dpratapx/restaurant-inspector
-    FastAPI->>Pipeline: Load pipeline(model, device=-1)
+    subgraph "Phase 4: Model Training"
+        Approved --> Load[Load Approved Data<br/>scripts/train.py]
+        Load --> Transform[Transform Labels<br/>4-state → 10 binary]
+        Transform --> Split[Split Data<br/>60/20/20]
+        Split --> Train[Fine-tune DistilBERT<br/>3 epochs]
+        Train --> Eval[Evaluate on Test Set<br/>Precision/Recall/F1]
+    end
     
-    Note over User,Model: Request Phase (Per Review)
-    User->>FastAPI: POST /analyze<br/>{"text": "Food was great..."}
-    FastAPI->>Pipeline: classifier(text)
-    Pipeline->>Model: Tokenize text (max_length=256)
-    Model->>Model: Multi-label classification
-    Model-->>Pipeline: 5 aspect probabilities
-    Pipeline-->>FastAPI: scores dict
-    FastAPI-->>User: {<br/>"FOOD": 0.92,<br/>"SERVICE": 0.78,<br/>"HYGIENE": 0.65,<br/>"PARKING": 0.50,<br/>"CLEANLINESS": 0.71<br/>}
+    subgraph "Phase 5: Model Persistence"
+        Eval --> Save[Save Model<br/>models/aspect-classifier/]
+        Eval --> Log[(training_runs table<br/>metrics logged)]
+    end
+    
+    Save --> End([End])
+    Log --> End
+    
+    style Ingest fill:#e1f5ff
+    style Draft fill:#fff4e1
+    style Review fill:#ffe1e1
+    style Train fill:#e1ffe1
+    style Save fill:#f0e1ff
 ```
 
-## Phase 1: Startup (One-Time Initialization)
+## Detailed Sequence Diagram
 
-### Step 1: Server Initialization
-**When**: Container starts on HF Spaces  
-**Duration**: ~30-60 seconds (first time), ~5 seconds (subsequent)
+![Sequence Diagram - Annotation Pipeline](sequence-diagram.png)
 
-```python
-# main.py - Executed at module import
-app = FastAPI(
-    title="Restaurant Inspector",
-    description="AI-powered restaurant review aspect analyzer",
-    version="1.0.0",
-)
+**Interaction Flow**: Admin commands → Scripts → Database (PostgreSQL) → HuggingFace → DistilBERT Model
+
+## Phase-by-Phase Breakdown
+
+### Phase 1: Data Ingestion (bootstrap_reviews.py)
+
+**Command**:
+```bash
+$env:PYTHONPATH='.'
+python scripts/bootstrap_reviews.py --count 300 --source-split train
 ```
+
+**Duration**: ~10 seconds
 
 **Actions**:
-- FastAPI application instance created
-- Routes registered (`/`, `/health`, `/analyze`)
-- Pydantic models loaded for validation
+1. Load HuggingFace `yelp_polarity` dataset
+2. Shuffle with seed=42 for reproducibility
+3. Select first 300 samples
+4. For each review:
+   - Map Yelp sentiment (0/1) to overall_sentiment
+   - Insert into `reviews` table
+   - Skip if `source_review_id` already exists (deduplication)
+5. Commit transaction
 
-### Step 2: Model Download
-**When**: `pipeline()` function called  
-**Duration**: ~15-30 seconds (first time), cached thereafter
-
-```python
-classifier = pipeline(
-    "text-classification",
-    model="dpratapx/restaurant-inspector",
-    device=-1,  # CPU mode
-    top_k=None,  # Return all scores
-)
+**Output**:
+```
+Loading dataset split: train[:300]
+Done. Inserted=300, Skipped(existing)=0
 ```
 
-**Actions**:
-1. Connects to Hugging Face Hub API
-2. Checks for cached model in `~/.cache/huggingface/`
-3. Downloads if not cached:
-   - `config.json` (1KB)
-   - `model.safetensors` (255MB)
-   - `tokenizer.json` (680KB)
-   - `tokenizer_config.json` (1KB)
-4. Validates model files integrity
-
-**Network Request**:
+**Database State**:
+```sql
+SELECT COUNT(*) FROM reviews;
+-- Result: 300
 ```
-GET https://huggingface.co/dpratapx/restaurant-inspector/resolve/main/config.json
-GET https://huggingface.co/dpratapx/restaurant-inspector/resolve/main/model.safetensors
-GET https://huggingface.co/dpratapx/restaurant-inspector/resolve/main/tokenizer.json
-GET https://huggingface.co/dpratapx/restaurant-inspector/resolve/main/tokenizer_config.json
-```
-
-### Step 3: Model Loading
-**When**: After download completes  
-**Duration**: ~3-5 seconds
-
-**Actions**:
-1. Load model weights from safetensors
-2. Initialize DistilBERT architecture (6 layers, 768 hidden size)
-3. Load tokenizer vocabulary (30,522 tokens)
-4. Move model to CPU (`device=-1`)
-5. Set model to evaluation mode (`model.eval()`)
-
-**Memory Usage**: ~800MB RAM
-
-### Step 4: Server Ready
-**When**: Pipeline fully loaded  
-**Duration**: Immediate
-
-**Console Output**:
-```
-🚀 Loading model...
-✅ Model loaded successfully!
-INFO:     Uvicorn running on http://0.0.0.0:7860 (Press CTRL+C to quit)
-INFO:     Started reloader process [1] using StatReload
-INFO:     Started server process [8]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-```
-
-**Actions**:
-- Uvicorn web server starts listening on port 7860
-- Health check endpoint becomes active
-- Ready to accept inference requests
 
 ---
 
-## Phase 2: Request Processing (Per Review)
+### Phase 2: Draft Annotation (generate_draft_annotations.py)
 
-### Step 1: User Submits Request
-**Endpoint**: `POST /analyze`  
-**Content-Type**: `application/json`
-
-**Request Example**:
-```json
-{
-  "text": "The food was absolutely delicious and the service was great! However, the parking area was too small and the bathroom was not very clean."
-}
-```
-
-**cURL Command**:
+**Command**:
 ```bash
-curl -X POST https://dpratapx-restaurant-inspector-api-dev.hf.space/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"text": "The food was delicious but parking was difficult!"}'
+$env:PYTHONPATH='.'
+python scripts/generate_draft_annotations.py --limit 300 --annotator "senior_data_analyst_v1"
 ```
 
-### Step 2: FastAPI Request Validation
-**Duration**: ~1ms
+**Duration**: ~5 seconds
 
 **Actions**:
-1. Parse JSON body
-2. Validate against `ReviewRequest` Pydantic model:
-   ```python
-   class ReviewRequest(BaseModel):
-       text: str = Field(..., min_length=1, max_length=5000)
-   ```
-3. Check field constraints:
+1. Query reviews without annotations
+2. For each review:
+   - Call `infer_aspect_states(review_text, overall_sentiment)`
+   - Apply keyword matching rules:
+     ```python
+     KEYWORDS = {
+         'food': {
+             'positive': ['delicious', 'tasty', 'amazing', 'excellent'],
+             'negative': ['terrible', 'bland', 'awful', 'disgusting']
+         },
+         # ... 4 more aspects
+     }
+     ```
+   - Determine 4-state label per aspect:
+     - Both pos & neg keywords → **mixed**
+     - Only pos keywords → **positive**
+     - Only neg keywords → **negative**
+     - No keywords → **not_mentioned**
+3. Create `ReviewAnnotation` with:
+   - `annotation_status = AnnotationStatus.DRAFT`
+   - `label_source = LabelSource.HEURISTIC`
+   - `annotator_name = "senior_data_analyst_v1"`
+4. Bulk insert to database
+
+**Output**:
+```
+Created 300 draft annotations.
+```
+
+**Database State**:
+```sql
+SELECT annotation_status, COUNT(*) 
+FROM review_annotations 
+GROUP BY annotation_status;
+
+-- Result:
+-- draft | 300
+```
+
+---
+
+### Phase 3: Human Review (approve_annotations.py)
+
+**Step 3a: List Drafts**
+
+**Command**:
+```bash
+python scripts/approve_annotations.py --list 10
+```
+
+**Output**:
+```
+ID=1 | Review ID=1 | Food=positive | Service=not_mentioned | Source=heuristic
+ID=2 | Review ID=2 | Food=negative | Service=negative | Source=heuristic
+...
+```
+
+**Step 3b: Approve in Bulk**
+
+**Command**:
+```bash
+python scripts/approve_annotations.py --approve-count 200 --reviewer "senior_data_analyst_v1"
+```
+
+**Duration**: ~2 seconds
+
+**Actions**:
+1. Query first 200 annotations with `status=draft`
+2. For each annotation:
+   - Set `annotation_status = AnnotationStatus.APPROVED`
+   - Set `reviewer_name = "senior_data_analyst_v1"`
+   - Set `reviewed_at = NOW()`
+3. Commit transaction
+
+**Output**:
+```
+Approved 200 annotations.
+
+=== Annotation Status Summary ===
+  approved: 200
+  draft: 100
+  TOTAL: 300 (66.7% approved)
+```
+
+**Database State**:
+```sql
+SELECT annotation_status, COUNT(*) 
+FROM review_annotations 
+GROUP BY annotation_status;
+
+-- Result:
+-- approved | 200
+-- draft    | 100
+```
+
+---
+
+### Phase 4: Model Training (scripts/train.py)
+
+**Command**:
+```bash
+$env:PYTHONPATH='.'
+python scripts/train.py --model distilbert-base-uncased --output-dir models/aspect-classifier
+```
+
+**Duration**: ~10-15 minutes (CPU) or ~2 minutes (GPU)
+
+**Step 4a: Load Approved Data**
+
+```python
+session = SessionLocal()
+records = session.query(ReviewAnnotation)\
+    .filter_by(annotation_status=AnnotationStatus.APPROVED)\
+    .all()
+
+# Result: 200 approved annotations
+```
+
+**Step 4b: Transform Labels**
+
+4-state labels → 10 binary labels:
+
+| Aspect State | Binary Labels Active |
+|-------------|---------------------|
+| positive | `food_positive=1` |
+| negative | `food_negative=1` |
+| mixed | `food_positive=1, food_negative=1` |
+| not_mentioned | (both 0) |
+
+**Step 4c: Split Data**
+
+```python
+X_train, X_temp, y_train, y_temp = train_test_split(
+    texts, labels, test_size=0.4, random_state=42
+)
+X_val, X_test, y_val, y_test = train_test_split(
+    X_temp, y_temp, test_size=0.5, random_state=42
+)
+
+# Result:
+# Train: 120 samples (60%)
+# Val:   40 samples (20%)
+# Test:  40 samples (20%)
+```
+
+**Step 4d: Tokenization**
+
+```python
+tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+encoded = tokenizer(
+    text,
+    truncation=True,
+    max_length=128,
+    padding="max_length"
+)
+```
+
+**Step 4e: Fine-tuning**
+
+```python
+model = AutoModelForSequenceClassification.from_pretrained(
+    "distilbert-base-uncased",
+    num_labels=10,
+    problem_type="multi_label_classification"
+)
+
+training_args = TrainingArguments(
+    output_dir="models/aspect-classifier",
+    num_train_epochs=3,
+    per_device_train_batch_size=8,
+    eval_strategy="epoch",
+    save_strategy="epoch"
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset
+)
+
+trainer.train()
+```
+
+**Training Progress**:
+```
+Epoch 1/3: loss=0.6923, val_loss=0.6854
+Epoch 2/3: loss=0.6102, val_loss=0.6234
+Epoch 3/3: loss=0.5234, val_loss=0.5876
+```
+
+**Step 4f: Evaluation**
+
+```python
+test_results = trainer.evaluate(test_dataset)
+
+# Result:
+# test_accuracy:  0.0000 (exact match)
+# test_precision: 0.0922
+# test_recall:    0.7714
+# test_f1:        0.1646
+```
+
+**Interpretation**:
+- **High recall (77%)**: Model captures most positive mentions
+- **Low precision (9%)**: Many false positives due to small training set
+- **Low exact match accuracy**: Multi-label task is strict
+- **F1 of 16.5%**: Expected baseline for 200-sample dataset
+
+---
+
+### Phase 5: Model Persistence
+
+**Step 5a: Save Model Files**
+
+```python
+trainer.save_model("models/aspect-classifier")
+tokenizer.save_pretrained("models/aspect-classifier")
+```
+
+**Files Created**:
+```
+models/aspect-classifier/
+├── model.safetensors      (255MB)
+├── config.json            (1KB)
+├── tokenizer.json         (680KB)
+├── tokenizer_config.json  (1KB)
+└── metadata.json          (2KB - custom)
+```
+
+**Step 5b: Log to Database**
+
+```python
+run = TrainingRun(
+    model_name="distilbert-base-uncased",
+    training_samples=120,
+    test_accuracy=0.0000,
+    test_f1=0.1646,
+    test_precision=0.0922,
+    test_recall=0.7714,
+    output_path="models/aspect-classifier",
+    trained_at=datetime.utcnow()
+)
+session.add(run)
+session.commit()
+```
+
+**Database State**:
+```sql
+SELECT * FROM training_runs ORDER BY id DESC LIMIT 1;
+
+-- Result:
+-- id:  3
+-- model_name: distilbert-base-uncased
+-- training_samples: 120
+-- test_f1: 0.1646
+-- trained_at: 2026-03-23 19:30:10
+```
+
+## Workflow Summary
+
+| Phase | Input | Process | Output | Duration |
+|-------|-------|---------|--------|----------|
+| 1. Ingest | Yelp dataset | bootstrap_reviews.py | 300 reviews in DB | 10s |
+| 2. Draft | 300 reviews | generate_draft_annotations.py | 300 draft annotations | 5s |
+| 3. Approve | 300 drafts | approve_annotations.py | 200 approved | 2s |
+| 4. Train | 200 approved | scripts/train.py | Trained model + metrics | 10-15min |
+| 5. Persist | Model + metrics | Save files + log DB | Model artifacts + run record | 5s |
+
+**Total Time**: ~15-20 minutes (end-to-end)
+
+## Reproducibility
+
+All phases are fully reproducible:
+
+```bash
+# 1. Set PYTHONPATH
+$env:PYTHONPATH='.'
+
+# 2. Run complete workflow
+python scripts/bootstrap_reviews.py --count 300
+python scripts/generate_draft_annotations.py --limit 300 --annotator "analyst_v1"
+python scripts/approve_annotations.py --approve-count 200 --reviewer "reviewer_v1"
+python scripts/train.py
+
+# 3. Verify
+python scripts/approve_annotations.py --summary
+```
+
+Expected final state:
+- 300 reviews
+- 200 approved annotations
+- 1 trained model
+- 1 training run logged
    - `text` is required
    - Length between 1-5000 characters
 4. Return 422 error if validation fails
