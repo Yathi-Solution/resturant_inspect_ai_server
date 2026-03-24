@@ -12,6 +12,24 @@ def enum_values(enum_cls):
     return [item.value for item in enum_cls]
 
 
+class Restaurant(Base):
+    """Master restaurant data table."""
+
+    __tablename__ = "restaurants"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    reviews: Mapped[list["Review"]] = relationship(
+        back_populates="restaurant", cascade="all, delete-orphan"
+    )
+
+
 class Review(Base):
     """Raw review records ingested from external sources."""
 
@@ -25,6 +43,9 @@ class Review(Base):
     language_code: Mapped[str] = mapped_column(String(8), default="en", nullable=False)
     business_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     business_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    restaurant_id: Mapped[int] = mapped_column(
+        ForeignKey("restaurants.id", ondelete="CASCADE"), nullable=False
+    )
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -35,6 +56,7 @@ class Review(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
+    restaurant: Mapped["Restaurant"] = relationship(back_populates="reviews")
     annotations: Mapped[list["ReviewAnnotation"]] = relationship(
         back_populates="review", cascade="all, delete-orphan"
     )
@@ -113,6 +135,8 @@ class TrainingRun(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+Index("idx_reviews_restaurant_id", Review.restaurant_id)
+Index("ix_restaurants_name", Restaurant.name)
 
 Index("idx_review_annotations_review_id", ReviewAnnotation.review_id)
 Index("idx_review_annotations_status", ReviewAnnotation.annotation_status)

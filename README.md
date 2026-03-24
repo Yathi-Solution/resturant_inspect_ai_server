@@ -185,6 +185,86 @@ curl -X POST "http://localhost:8000/analyze" \
 }
 ```
 
+## 🎨 Streamlit Admin Dashboard
+
+**NEW!** Visual annotation management and monitoring tool for internal use.
+
+### Quick Start
+
+```bash
+# One-command setup and launch (Windows)
+.\start_dashboard.ps1
+```
+
+Or manually:
+
+```bash
+# Install Streamlit dependencies
+pip install streamlit pandas plotly
+
+# Apply latest migrations (includes restaurants table)
+alembic upgrade head
+
+# Start dashboard
+streamlit run streamlit_app/Home.py
+```
+
+Opens at: **http://localhost:8501**
+
+### Pages
+
+- **🏠 Home**: System overview with quick stats and navigation
+- **Annotations.py**: Review and approve AI-generated labels
+  - Filter by restaurant, status, date, aspect
+  - View AI predictions for all 5 aspects
+  - Approve/reject individual annotations
+  - Real-time status updates
+  
+- **Training.py**: Monitor model performance
+  - Training run history with metrics (F1, Precision, Recall)
+  - Performance trend charts over time
+  - Training data quality statistics
+
+### Database Structure
+
+The dashboard uses a **normalized database** with proper foreign key relationships:
+
+```
+restaurants (master table)
+├── id, name, address, phone
+└── Referenced by reviews.restaurant_id
+
+reviews
+├── restaurant_id → restaurants.id
+└── Review text + metadata
+
+review_annotations
+├── review_id → reviews.id
+└── Aspect labels + approval status
+```
+
+Current restaurant: **Niloufer** (Hyderabad, India)
+
+### Workflow
+
+1. **View Annotations** → Filter and browse AI predictions
+2. **Approve/Reject** → Update annotation status in database
+3. **Train Model** → Run `python scripts/train.py` in terminal
+4. **View Results** → Check Training page for metrics
+
+### Use Cases
+
+- **Client Demo**: Show professional annotation workflow with visual UI
+- **Quality Control**: Manual review of model predictions
+- **Data Curation**: Approve high-quality training data before model training
+- **Progress Tracking**: Monitor annotation counts and training runs
+
+**Note**: Streamlit runs locally for demos. FastAPI is deployed to Hugging Face Spaces for production inference.
+
+See [`streamlit_app/README.md`](streamlit_app/README.md) for detailed usage guide.
+
+---
+
 ## 📊 Model Performance
 
 **Current Model** (trained on 200 approved samples):
